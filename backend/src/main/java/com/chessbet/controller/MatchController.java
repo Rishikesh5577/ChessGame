@@ -5,6 +5,7 @@ import com.chessbet.mapper.GameMapper;
 import com.chessbet.service.MatchService;
 import com.chessbet.service.OnlinePlayersService;
 import org.springframework.messaging.handler.annotation.MessageMapping;
+import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
@@ -46,11 +47,9 @@ public class MatchController {
      */
     @MessageMapping("/match/join")
     @SendTo("/topic/match.join")
-    public GameDto joinGame(JoinGameCommand command) {
+    public GameDto joinGame(@Payload JoinGameCommand command) {
         var game = matchService.joinGame(command.gameId(), command.playerId());
         var gameDto = GameMapper.toDto(game);
-        // sendToPlayer(command.playerId(), "/topic/match/join", gameDto);
-        // sendToPlayer(game.getHostPlayerId(), "/topic/match/join", gameDto);
         return gameDto;
     }
 
@@ -59,13 +58,10 @@ public class MatchController {
      * @param command contains information necessary to start a new game, such as player IDs.
      */
     @MessageMapping("/match/joinAnonymous")
-    //@SendToUser("/topic/match.join")
     @SendTo("/topic/match.join")
-    public GameDto joinAnonymousGame(JoinGameCommand command) {
+    public GameDto joinAnonymousGame(@Payload JoinGameCommand command) {
         var game = matchService.joinAnonymousGame(command.gameId(), command.playerId());
         var gameDto = GameMapper.toDto(game);
-        // sendToPlayer(command.playerId(), "/topic/match.join", gameDto);
-        // sendToPlayer(game.getHostPlayerId(), "/topic/match.join", gameDto);
         return gameDto;
     }
 

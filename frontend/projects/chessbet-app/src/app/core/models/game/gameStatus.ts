@@ -1,9 +1,0 @@
-export enum GameStatus {
-  OPEN = 'OPEN',
-  ONGOING = 'ONGOING',
-  DRAW = 'DRAW',
-  RESIGNED = 'RESIGNED',
-  COMPLETED = 'COMPLETED',
-  ABORTED = 'ABORTED',
-  CANCELLED = 'CANCELLED',
-}

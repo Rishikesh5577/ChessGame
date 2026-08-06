@@ -77,7 +77,7 @@ public class GameService {
         game.setHostPlayerColor(hostPlayerColor);
         game.setStatus(GameStatus.OPEN);
 
-        if (hostPlayer != null && hostPlayerColor == PlayerColor.WHITE) {
+        if (hostPlayer != null) {
             game.setHostPlayer(hostPlayer);
         }
         else {

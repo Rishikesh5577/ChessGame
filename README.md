@@ -1,17 +1,15 @@
 # ChessBet: Online Chess Platform
-ChessBet is an online chess platform where players can engage in player-versus-player (PvP) matches or compete against AI. The platform supports both rated games and friendly matches, catering to a wide audience ranging from complete beginners to seasoned chess veterans. ChessBet's goal is to make chess more accessible and enjoyable for everyone by eliminating the need for physical boards or in-person opponents. This web-based application is developed with Spring Boot for the backend and Angular for the frontend.
+ChessBet is an online chess platform where players can engage in player-versus-player (PvP) matches or compete against AI. The platform supports both rated games and friendly matches, catering to a wide audience ranging from complete beginners to seasoned chess veterans. ChessBet's goal is to make chess more accessible and enjoyable for everyone by eliminating the need for physical boards or in-person opponents. This web-based application is developed with Spring Boot for the backend and React for the frontend.
 
 ## Architectural Overview
 ### Technical Stack
 - **Spring Boot** - Backend framework for building REST API applications
-- **Spring Data JPA** -  Provides repository support for JPA data access
+- **Spring Data MongoDB** - Provides repository support for MongoDB data access
 - **Spring Websocket** - Synchronizes game state between players in real-time
-- **PostgreSQL** - An open-source relational database to store game data
-- **Flyway** - Manages database migrations
+- **MongoDB** - Document database to store game data
 - **JUnit** - Facilitates unit testing in Java
-- **Angular 17** - Frontend framework to build SPA applications
-- **PrimeNG** - Rich set of UI components for the Angular
-- **Bootstrap 5** - CSS library for quickly prototyping layouts
+- **React + Vite** - Frontend SPA (`client/`)
+- **chess.js / react-chessboard** - Browser chess board and move validation
 
 ### Design Patterns
 - Mode-View-Controller (MVC)
@@ -33,44 +31,82 @@ ChessBet is an online chess platform where players can engage in player-versus-p
 - Chat functionality between players
 - UI improvements and responsive design
 
-## Getting Started
-To set up ChessBet locally, follow these steps:
+## Environment variables
 
-1. Install SDKs
-    - [Download](https://www.oracle.com/java/technologies/downloads) and install the latest JDK.
-    - [Download](https://nodejs.org/en/download) and install the Node.js runtime.
-    - [Download](https://www.postgresql.org/download) and install PostgreSQL database.
+Values are in the real files (gitignored — never commit):
+- `backend/.env`
+- `client/.env`
 
-2. Install Angular app NPM packages: navigate to the frontend directory and install dependencies:
+### Backend (`backend/.env`)
+
+| Variable | Required | Description |
+|---|---|---|
+| `MONGODB_URI` | Yes | MongoDB Atlas connection string |
+| `SERVER_PORT` | No | HTTP port (default `8000`; hosts may set `PORT`) |
+| `APP_CORS_ORIGINS` | Yes for live | Frontend URL(s), comma-separated, no trailing slash |
+| `APP_WS_ALLOWED_ORIGIN_PATTERNS` | Yes for live | Same frontend URL(s), or `*` for local |
+
+### Frontend (`client/.env`)
+
+| Variable | Required | Description |
+|---|---|---|
+| `VITE_API_URL` | Yes | REST base including `/api` |
+| `VITE_WS_URL` | Yes | STOMP WebSocket (`ws://` local, `wss://` live) |
+
+Vite bakes `VITE_*` at build time — change URLs, then rebuild.
+
+## Getting Started (local)
+1. Install JDK 21+, Node.js, and use MongoDB Atlas (or local Mongo).
+
+2. Backend: `backend/.env` already has local defaults. Keep/update `MONGODB_URI`.
+
+3. Client:
     ```shell
-    cd ./frontend
+    cd ./client
     npm install
     ```
+    `client/.env` already points at local API.
 
-3. Modify the database connection strings in Spring Boot's [application.properties](./backend/src/main/resources/application.properties) file. Update the following sections:
-    - `spring.datasource.url` - Specify the database server host address with port number and instance name.
-    - `spring.datasource.username` - Specify the database username
-    - `spring.datasource.password` - Specify the database user password
-    - `spring.flyway.url` - Same values from the `spring.datasource` values for the Flyway migration.
-    - `spring.flyway.user`
-    - `spring.flyway.password`
-
-4. Run applications:
-    - To start the backend application:
+4. Run:
     ```shell
     cd ./backend
     ./gradlew bootRun
     ```
-
-    - To launch the frontend application:
     ```shell
-    cd ./frontend
-    npm run start
+    cd ./client
+    npm run dev
     ```
 
-5. Use the following local URLs to access the apps:
+5. URLs:
     - Backend API: http://localhost:8000
     - Frontend UI: http://localhost:8001
+
+> Legacy Angular app remains under `frontend/` but the supported UI is `client/`.
+
+## Deploying (live)
+
+### 1. Backend host
+Set these on Railway / Render / Fly / VPS (do not commit secrets):
+- `MONGODB_URI`
+- `APP_CORS_ORIGINS` = live frontend URL (e.g. `https://your-app.vercel.app`)
+- `APP_WS_ALLOWED_ORIGIN_PATTERNS` = same URL
+- Port: host `PORT` is used automatically, or set `SERVER_PORT`
+
+Build: `cd backend && ./gradlew bootJar` then run the JAR.
+
+### 2. Frontend
+In `client/.env`, set live URLs (`https://…/api` and `wss://…/ws`), then:
+```shell
+cd ./client
+npm run build
+```
+Deploy `client/dist/`.
+
+### 3. Checklist
+- [ ] `.env` files are **not** in git
+- [ ] Atlas network access allows your backend host
+- [ ] CORS matches exact frontend URL (no trailing slash)
+- [ ] Live client uses `https` + `wss`
 
 ## Screenshots
 ![Screenshot 1](./screenshots/screenshot-1.jpg)

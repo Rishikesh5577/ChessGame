@@ -35,3 +35,19 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Secrets / local env (never commit real values) ###
+.env
+.env.local
+.env.*.local
+**/.env
+!**/.env.example
+!**/.env.*.example
+
+### Build / deps ###
+node_modules/
+**/node_modules/
+client/dist/
+frontend/dist/
+*.log
+.DS_Store

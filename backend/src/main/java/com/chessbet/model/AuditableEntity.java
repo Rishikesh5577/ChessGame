@@ -1,8 +1,8 @@
 package com.chessbet.model;
 
-import jakarta.persistence.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedDate;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -11,27 +11,20 @@ import java.util.UUID;
  * AuditableEntity class. Represents an entity with audit fields.
  * It provides an id field for all entities.
  * It also provides fields for the creation and update dates and the user who created and updated the entity.
- * The id is a UUID and is generated automatically when the entity is created in the database.
+ * The id is a UUID and is generated automatically when the entity is created.
  */
-@MappedSuperclass
 public abstract class AuditableEntity {
     @Id
-    @GeneratedValue(generator = "UUID")
-    @Column(updatable = false, nullable = false)
     private UUID id = UUID.randomUUID();
 
-    @CreationTimestamp
-    @Column(name = "created_date", nullable = false)
+    @CreatedDate
     private Instant createdDate = Instant.now();
 
-    @UpdateTimestamp
-    @Column(name = "updated_date")
+    @LastModifiedDate
     private Instant updatedDate;
 
-    @Column(name = "created_by")
     private String createdBy;
 
-    @Column(name = "updated_by")
     private String updatedBy;
 
     /**

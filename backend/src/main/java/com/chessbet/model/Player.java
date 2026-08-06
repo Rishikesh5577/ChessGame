@@ -1,27 +1,24 @@
 package com.chessbet.model;
 
 import com.chessbet.constant.GameConst;
-import jakarta.persistence.*;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
- * Player entity. Represents a player in the system.
+ * Player document. Represents a player in the system.
  */
-@Entity
-@Table(name = "players")
+@Document(collection = "players")
 public class Player extends AuditableEntity {
-    @Column(name = "first_name")
     private String firstName;
 
-    @Column(name = "last_name")
     private String lastName;
 
-    @Column(nullable = false, unique = true)
+    @Indexed(unique = true)
     private String username;
 
-    @Column(nullable = false, unique = true)
+    @Indexed(unique = true)
     private String email;
 
-    @Column()
     private int elo = GameConst.DEFAULT_ELO;
 
     public String getFirstName() {

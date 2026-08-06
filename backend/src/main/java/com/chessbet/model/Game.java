@@ -1,27 +1,26 @@
 package com.chessbet.model;
 
 import com.chessbet.constant.GameConst;
-import jakarta.persistence.*;
+import org.springframework.data.mongodb.core.mapping.DBRef;
+import org.springframework.data.mongodb.core.mapping.Document;
+
 import java.util.UUID;
 
 /**
- * Game entity. Represents a game between two players.
+ * Game document. Represents a game between two players.
  * It contains the players' ids, the current turn player's id, the game's status, and the game's PGN.
  */
-@Entity
-@Table(name = "games")
+@Document(collection = "games")
 public class Game extends AuditableEntity {
     /**
      * The player who hosts the game.
      */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "host_player_id")
+    @DBRef
     private Player hostPlayer;
 
     /**
      * The anonymous player's id who hosts the game.
      */
-    @Column(name = "anonymous_host_player_id")
     private UUID anonymousHostPlayerId;
 
     /**
@@ -29,60 +28,48 @@ public class Game extends AuditableEntity {
      * If the host player is not set, the color is null.
      * It means that color will be assigned randomly when second player joins the game.
      */
-    @Column(name = "host_player_color")
     private PlayerColor hostPlayerColor;
 
     /**
      * The player who plays as white.
      */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "white_player_id")
+    @DBRef
     private Player whitePlayer;
 
     /**
      * The anonymous player's id who plays as white.
      */
-    @Column(name = "white_anonymous_player_id")
     private UUID whiteAnonymousPlayerId;
 
     /**
      * The player who plays as black.
      */
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "black_player_id")
+    @DBRef
     private Player blackPlayer;
 
     /**
      * The anonymous player's id who plays as black.
      */
-    @Column(name = "black_anonymous_player_id")
     private UUID blackAnonymousPlayerId;
 
     /**
      * The color of the player who won the game.
      * If the game is not finished yet, the winner player is null.
      */
-    @Column(name = "winner_player")
     private PlayerColor winnerPlayer;
 
     /**
      * The player color who has the current turn in the game.
      * If game is not started yet, the current turn is null.
      */
-    @Column(name = "current_turn")
     private PlayerColor currentTurn;
 
-    @Column(name = "is_timer_enabled")
     private boolean isTimerEnabled = false;
 
-    @Column(name = "is_ranked")
     private boolean isRanked = false;
 
-    @Column(nullable = false)
-    @Enumerated(EnumType.STRING)
     private GameStatus status = GameStatus.OPEN;
 
-    @Column(nullable = false)
     private String pgn = "";
 
     public Player getWhitePlayer() {
@@ -182,7 +169,9 @@ public class Game extends AuditableEntity {
     }
 
     public boolean isFull() {
-        return whitePlayer != null && blackPlayer != null;
+        boolean hasWhite = whitePlayer != null || whiteAnonymousPlayerId != null;
+        boolean hasBlack = blackPlayer != null || blackAnonymousPlayerId != null;
+        return hasWhite && hasBlack;
     }
 
     public PlayerColor getHostPlayerColor() {
