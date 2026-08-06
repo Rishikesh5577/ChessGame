@@ -1,0 +1,29 @@
+<h4>Lobby</h4>
+
+<p-table [value]="openGames" [paginator]="true" [lazy]="true" [rows]="10" (onLazyLoad)="loadGames($event)"
+  [(first)]="first" [loading]="isLoading">
+  <ng-template pTemplate="header">
+    <tr>
+      <th>Color</th>
+      <th>Player</th>
+      <th>Rating</th>
+      <th>Time</th>
+      <th>Mode</th>
+      <th></th>
+    </tr>
+  </ng-template>
+  <ng-template pTemplate="body" let-game>
+    <tr>
+      <td>{{ getHostColor(game) }}</td>
+      <td>{{ game.hostPlayerUsername }}</td>
+      <td>{{ game.hostPlayerElo }}</td>
+      <td>--</td>
+      <td>Classic</td>
+      <td>
+        @if (game.hostPlayerId !== playerId) {
+          <p-button label="Join" (click)="joinGame(game)" [disabled]="isLoading"></p-button>
+        }
+      </td>
+    </tr>
+  </ng-template>
+</p-table>
