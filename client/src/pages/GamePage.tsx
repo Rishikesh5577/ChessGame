@@ -1,14 +1,28 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { GameChessboard, type LocalMove } from '../components/GameChessboard'
+import { GameChessboard, type LocalMove, type PositionInfo } from '../components/GameChessboard'
 import { GameResultDialog } from '../components/GameResultDialog'
 import { useToast } from '../components/Toast'
+import { apiService } from '../services/api'
 import { matchService } from '../services/match'
 import { playerService } from '../services/player'
-import { PlayerColor, type GameDto, type MoveDto } from '../types/game'
+import {
+  BOT_DIFFICULTY_LABELS,
+  PlayerColor,
+  type BotMoveCommand,
+  type GameDto,
+  type MoveDto,
+} from '../types/game'
 
 type LocationState = {
   game?: GameDto
+}
+
+type ExternalMove = {
+  from: string
+  to: string
+  promotion?: string | null
+  key: number
 }
 
 export function GamePage() {
@@ -22,14 +36,17 @@ export function GamePage() {
   const [currentTurn, setCurrentTurn] = useState<PlayerColor | undefined>(
     game?.currentTurn ?? PlayerColor.WHITE,
   )
-  const [externalMove, setExternalMove] = useState<{ from: string; to: string; key: number } | null>(
-    null,
-  )
+  const [externalMove, setExternalMove] = useState<ExternalMove | null>(null)
   const [resultOpen, setResultOpen] = useState(false)
   const [result, setResult] = useState<'win' | 'lose' | 'draw'>()
   const [pgn, setPgn] = useState('')
   const [moveSans, setMoveSans] = useState<string[]>([])
   const [inCheck, setInCheck] = useState(false)
+  const [botThinking, setBotThinking] = useState(false)
+  const [botFailed, setBotFailed] = useState(false)
+
+  const resultReported = useRef(false)
+  const openingRequested = useRef(false)
 
   const playerId = playerService.getPlayerId()
   const playerColor = useMemo(() => {
@@ -39,6 +56,7 @@ export function GamePage() {
       : PlayerColor.BLACK
   }, [game, playerId])
 
+  const isBotGame = Boolean(game?.vsBot)
   const orientation = playerColor === PlayerColor.BLACK ? 'black' : 'white'
   const isMyTurn = currentTurn === playerColor
 
@@ -56,32 +74,88 @@ export function GamePage() {
     }
   }, [game, navigate])
 
-  useEffect(() => {
-    const unsub = matchService.onReceivedMove((move: MoveDto) => {
-      if (move.color !== playerColor) {
-        setExternalMove({ from: move.from, to: move.to, key: Date.now() })
-      }
-      setCurrentTurn(move.color === PlayerColor.WHITE ? PlayerColor.BLACK : PlayerColor.WHITE)
+  const askEngine = useCallback(
+    async (gameId: string, command: BotMoveCommand) => {
+      setBotThinking(true)
+      try {
+        const reply = await apiService.playBotMove(gameId, command)
 
-      if (move.isCheckmate) {
-        // The side that just moved delivered checkmate — they win.
-        setResult(playerColor === move.color ? 'win' : 'lose')
-        setResultOpen(true)
-      } else if (move.isStalemate) {
-        setResult('draw')
-        setResultOpen(true)
+        if (reply.gameOver || !reply.from || !reply.to) {
+          return
+        }
+
+        setExternalMove({
+          from: reply.from,
+          to: reply.to,
+          promotion: reply.promotion,
+          key: Date.now(),
+        })
+        setCurrentTurn(reply.color === PlayerColor.WHITE ? PlayerColor.BLACK : PlayerColor.WHITE)
+      } catch (err) {
+        console.error(err)
+        setBotFailed(true)
+        toast.show(err instanceof Error ? err.message : 'The engine could not reply', 'error')
+      } finally {
+        setBotThinking(false)
       }
+    },
+    [toast],
+  )
+
+  // The engine opens the game when it has the white pieces.
+  useEffect(() => {
+    if (!game?.vsBot || game.botColor !== PlayerColor.WHITE || openingRequested.current) {
+      return
+    }
+
+    openingRequested.current = true
+    void askEngine(game.id, { from: null, to: null, promotion: null })
+  }, [game, askEngine])
+
+  useEffect(() => {
+    if (isBotGame) {
+      return
+    }
+
+    const unsub = matchService.onReceivedMove((move: MoveDto) => {
+      if (!game || move.gameId !== game.id || move.color === playerColor) {
+        return
+      }
+
+      setExternalMove({
+        from: move.from,
+        to: move.to,
+        promotion: move.promotion,
+        key: Date.now(),
+      })
+      setCurrentTurn(move.color === PlayerColor.WHITE ? PlayerColor.BLACK : PlayerColor.WHITE)
     })
+
     return unsub
-  }, [playerColor])
+  }, [game, isBotGame, playerColor])
 
   const onPositionChange = useCallback(
-    (info: { pgn: string; fen: string; inCheck: boolean; sans: string[] }) => {
+    (info: PositionInfo) => {
       setPgn(info.pgn)
       setInCheck(info.inCheck)
       setMoveSans(info.sans)
+
+      if (resultReported.current) {
+        return
+      }
+
+      if (info.isCheckmate) {
+        // The side that has to move is mated, so that side lost.
+        resultReported.current = true
+        setResult(info.sideToMove === playerColor ? 'lose' : 'win')
+        setResultOpen(true)
+      } else if (info.isStalemate || info.isDraw) {
+        resultReported.current = true
+        setResult('draw')
+        setResultOpen(true)
+      }
     },
-    [],
+    [playerColor],
   )
 
   if (!game) {
@@ -89,23 +163,26 @@ export function GamePage() {
   }
 
   const sendMove = (move: LocalMove) => {
+    setCurrentTurn(move.color === PlayerColor.WHITE ? PlayerColor.BLACK : PlayerColor.WHITE)
+
+    if (isBotGame) {
+      void askEngine(game.id, {
+        from: move.from,
+        to: move.to,
+        promotion: move.promotion ?? null,
+      })
+      return
+    }
+
     matchService.makeMove({
       gameId: game.id,
       color: move.color,
       from: move.from,
       to: move.to,
+      promotion: move.promotion ?? null,
       isCheckmate: move.isCheckmate,
       isStalemate: move.isStalemate,
     })
-    setCurrentTurn(move.color === PlayerColor.WHITE ? PlayerColor.BLACK : PlayerColor.WHITE)
-    if (move.isCheckmate) {
-      setResult('win')
-      setResultOpen(true)
-      toast.show('Checkmate! You win.', 'success')
-    } else if (move.isStalemate) {
-      setResult('draw')
-      setResultOpen(true)
-    }
   }
 
   const isYou = (id?: string) =>
@@ -114,6 +191,18 @@ export function GamePage() {
   const goHome = () => {
     setResultOpen(false)
     navigate('/home')
+  }
+
+  const opponentLabel = isBotGame
+    ? `Stockfish · ${BOT_DIFFICULTY_LABELS[game.botDifficulty ?? 'IMPOSSIBLE']}`
+    : 'Human opponent'
+
+  const bannerText = () => {
+    if (resultOpen) return 'Game over'
+    if (botFailed) return 'Engine error — return to the lobby'
+    if (botThinking) return 'Stockfish is thinking…'
+    if (isMyTurn) return inCheck ? 'Your turn — you are in check!' : 'Your turn'
+    return isBotGame ? 'Stockfish is thinking…' : 'Waiting for opponent…'
   }
 
   return (
@@ -126,14 +215,8 @@ export function GamePage() {
       />
 
       <div className="board-col">
-        <div className={`turn-banner ${isMyTurn ? 'your-turn' : 'waiting-turn'}`}>
-          {resultOpen
-            ? 'Game over'
-            : isMyTurn
-              ? inCheck
-                ? 'Your turn — you are in check!'
-                : 'Your turn'
-              : 'Waiting for opponent…'}
+        <div className={`turn-banner ${isMyTurn && !botThinking ? 'your-turn' : 'waiting-turn'}`}>
+          {bannerText()}
         </div>
         <GameChessboard
           orientation={orientation}
@@ -166,6 +249,7 @@ export function GamePage() {
             Turn: <strong>{currentTurn ?? '—'}</strong>
             {inCheck && !resultOpen ? ' · Check' : ''}
           </p>
+          <p className="meta">Mode: {opponentLabel}</p>
           <p className="meta">Status: {game.status}</p>
           <div className="actions">
             <button type="button" className="btn" disabled title="Coming soon">

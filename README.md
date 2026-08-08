@@ -19,17 +19,22 @@ ChessBet is an online chess platform where players can engage in player-versus-p
 ### Implemented Features
 - Chess board with drag-and-drop functionality
 - Real-time game synchronization using Websockets
-- Chess engine integration for validating moves (converted the [Chess.js](https://github.com/jhlywa/chess.js) library to Java)
+- Play against Stockfish at four strength levels, with the server enforcing move legality
 - Anonymous and authenticated user support
+- Responsive layout for phone, tablet and desktop
+
+### Known Issues
+- The Java port of [Chess.js](https://github.com/jhlywa/chess.js) under `backend/src/main/java/com/chessbet/engine`
+  fails standard perft checks (see the disabled `ChessPerftTest`), so it is not used for game state.
+  Human-vs-human games rely on chess.js in the browser; bot games are validated by Stockfish on the server.
 
 ### Future Enhancements
 - Resign and draw game options
+- Server-side validation for human-vs-human games
 - Authenticated game rooms for private matches
 - User registration and profile management
 - Leaderboard and game history tracking
-- Stockfish engine integration for AI opponents
 - Chat functionality between players
-- UI improvements and responsive design
 
 ## Environment variables
 
@@ -45,6 +50,12 @@ Values are in the real files (gitignored — never commit):
 | `SERVER_PORT` | No | HTTP port (default `8000`; hosts may set `PORT`) |
 | `APP_CORS_ORIGINS` | Yes for live | Frontend URL(s), comma-separated, no trailing slash |
 | `APP_WS_ALLOWED_ORIGIN_PATTERNS` | Yes for live | Same frontend URL(s), or `*` for local |
+| `APP_BOT_ENABLED` | No | `false` turns off games against the computer (default `true`) |
+| `APP_BOT_ENGINE_PATH` | No | Path to the Stockfish binary. Blank auto-detects |
+| `APP_BOT_POOL_SIZE` | No | Concurrent engine processes (default `2`) |
+| `APP_BOT_THREADS` | No | Search threads per process (default `1`) |
+| `APP_BOT_HASH_MB` | No | Hash table per process in MB (default `64`) |
+| `APP_MATCHMAKING_TIMEOUT_MS` | No | Alone in queue → bot after this many ms (default `30000`) |
 
 ### Frontend (`client/.env`)
 
@@ -82,6 +93,40 @@ Vite bakes `VITE_*` at build time — change URLs, then rebuild.
     - Frontend UI: http://localhost:8001
 
 > Legacy Angular app remains under `frontend/` but the supported UI is `client/`.
+
+## Matchmaking
+
+Use **Find Match** (home page or PLAY menu). No manual create/join:
+
+- If another player is already searching → instant PvP (random colours)
+- If you wait alone for `APP_MATCHMAKING_TIMEOUT_MS` (default **30s**) → automatic game vs Stockfish at **Impossible** strength
+
+Cancel before the timeout to leave the queue without starting a bot game. Disconnect also cancels.
+
+## Playing the computer
+
+The bot is [Stockfish](https://stockfishchess.org/) driven over UCI. The server keeps the move list
+for each game, asks Stockfish which moves are legal before accepting one, and asks it for the reply,
+so the browser cannot feed the engine an invented position.
+
+Auto-match uses Impossible strength. The Docker image installs Stockfish already. For local development you need the binary yourself:
+
+1. Download a build for your machine from the
+   [Stockfish releases](https://github.com/official-stockfish/Stockfish/releases).
+2. Put it at `backend/engine/stockfish.exe` (Windows) — that path is auto-detected and gitignored.
+   On Linux/macOS, installing `stockfish` on your `PATH` is enough.
+3. Anywhere else, point `APP_BOT_ENGINE_PATH` at it.
+
+`GET /api/bot/status` reports whether the engine was found. If it is missing at timeout, matchmaking fails with a clear error instead of hanging.
+
+Strength presets (used when creating a bot game directly via API):
+
+| Level | Engine setting | Think time |
+|---|---|---|
+| Easy | `UCI_Elo` 1320 | 150 ms |
+| Medium | `UCI_Elo` 1800 | 350 ms |
+| Hard | `UCI_Elo` 2400 | 600 ms |
+| Impossible | No limit, full strength | 1200 ms |
 
 ## Deploying (live)
 

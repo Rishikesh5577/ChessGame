@@ -1,5 +1,6 @@
 package com.chessbet.service;
 
+import com.chessbet.constant.GameConst;
 import com.chessbet.engine.Pgn;
 import com.chessbet.model.*;
 import com.chessbet.repository.GameRepository;
@@ -7,6 +8,7 @@ import com.chessbet.repository.PlayerRepository;
 import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Random;
 import java.util.UUID;
 
 /**
@@ -86,6 +88,49 @@ public class GameService {
 
         var pgn = new Pgn();
         game.setPgn(pgn.toString());
+        return gameRepository.save(game);
+    }
+
+    /**
+     * Create a game against the chess engine. Unlike a human game there is nobody to wait for, so
+     * the game is playable as soon as it is created.
+     *
+     * @param hostPlayerId The anonymous id of the human player
+     * @param hostPlayerColor The colour the human wants, or null to pick at random
+     * @param difficulty Engine strength, or null for full strength
+     * @return The newly created game, already in progress
+     */
+    public Game createBotGame(UUID hostPlayerId, PlayerColor hostPlayerColor, BotDifficulty difficulty) {
+        var humanColor = hostPlayerColor != null
+                ? hostPlayerColor
+                : (new Random().nextBoolean() ? PlayerColor.WHITE : PlayerColor.BLACK);
+
+        var botColor = humanColor == PlayerColor.WHITE ? PlayerColor.BLACK : PlayerColor.WHITE;
+
+        var game = new Game();
+        game.setAnonymousHostPlayerId(hostPlayerId);
+        game.setHostPlayerColor(humanColor);
+        game.setVsBot(true);
+        game.setBotColor(botColor);
+        game.setBotDifficulty(difficulty != null ? difficulty : BotDifficulty.IMPOSSIBLE);
+
+        if (humanColor == PlayerColor.WHITE) {
+            game.setWhiteAnonymousPlayerId(hostPlayerId);
+            game.setBlackAnonymousPlayerId(GameConst.BOT_PLAYER_ID);
+        } else {
+            game.setBlackAnonymousPlayerId(hostPlayerId);
+            game.setWhiteAnonymousPlayerId(GameConst.BOT_PLAYER_ID);
+        }
+
+        game.setStatus(GameStatus.ONGOING);
+        game.setCurrentTurn(PlayerColor.WHITE);
+
+        var pgn = new Pgn();
+        pgn.setWhitePlayer(game.getWhitePlayerUsername());
+        pgn.setBlackPlayer(game.getBlackPlayerUsername());
+        pgn.setWhiteTurn();
+        game.setPgn(pgn.toString());
+
         return gameRepository.save(game);
     }
 

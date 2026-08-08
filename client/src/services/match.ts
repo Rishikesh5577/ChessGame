@@ -2,12 +2,15 @@ import { Client, type IMessage, type StompSubscription } from '@stomp/stompjs'
 import { APP_CONFIG } from '../config'
 import { playerService } from './player'
 import type {
+  CancelFindMatchCommand,
   CancelGameCommand,
   ConnectPlayerCommand,
   CreateAnonymousGameCommand,
+  FindMatchCommand,
   GameDto,
   JoinGameCommand,
   MakeMoveCommand,
+  MatchQueueDto,
   MoveDto,
 } from '../types/game'
 
@@ -29,6 +32,7 @@ class MatchService {
   private gameRemovedListeners = new Set<Listener<GameDto>>()
   private receivedMoveListeners = new Set<Listener<MoveDto>>()
   private matchStartedListeners = new Set<Listener<GameDto>>()
+  private queueListeners = new Set<Listener<MatchQueueDto>>()
   private connectionListeners = new Set<Listener<boolean>>()
 
   connect(): void {
@@ -111,6 +115,11 @@ class MatchService {
     return () => this.matchStartedListeners.delete(listener)
   }
 
+  onQueueStatus(listener: Listener<MatchQueueDto>): () => void {
+    this.queueListeners.add(listener)
+    return () => this.queueListeners.delete(listener)
+  }
+
   /** Notify local UI immediately (e.g. after REST create) even if WS echo is delayed. */
   notifyGameAdded(game: GameDto): void {
     this.gameAddedListeners.forEach((l) => l(game))
@@ -118,6 +127,20 @@ class MatchService {
 
   notifyGameRemoved(game: GameDto): void {
     this.gameRemovedListeners.forEach((l) => l(game))
+  }
+
+  findMatch(): void {
+    const command: FindMatchCommand = {
+      playerId: playerService.getPlayerId(),
+    }
+    this.publish('/app/match/find', command)
+  }
+
+  cancelFind(): void {
+    const command: CancelFindMatchCommand = {
+      playerId: playerService.getPlayerId(),
+    }
+    this.publish('/app/match/cancelFind', command)
   }
 
   createAnonymousGame(command: CreateAnonymousGameCommand): void {
@@ -183,6 +206,17 @@ class MatchService {
           this.currentMatch = game
           this.matchStartedListeners.forEach((l) => l(game))
         }
+      }),
+    )
+
+    this.subscriptions.push(
+      this.client.subscribe('/topic/match.queue', (message: IMessage) => {
+        const status = JSON.parse(message.body) as MatchQueueDto
+        const playerId = playerService.getPlayerId()
+        if (!sameId(status.playerId, playerId)) {
+          return
+        }
+        this.queueListeners.forEach((l) => l(status))
       }),
     )
 

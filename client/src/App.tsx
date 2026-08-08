@@ -15,7 +15,10 @@ function AppShell() {
   useEffect(() => {
     matchService.connect()
     const unsub = matchService.onMatchStarted((game: GameDto) => {
-      toast.show('Match started — good luck!', 'success')
+      toast.show(
+        game.vsBot ? 'Matched with Stockfish — good luck!' : 'Match started — good luck!',
+        'success',
+      )
       navigate('/game', { state: { game } })
     })
     return () => {

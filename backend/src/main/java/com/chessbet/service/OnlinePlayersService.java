@@ -18,8 +18,21 @@ public class OnlinePlayersService {
         players.remove(playerId);
     }
 
-    public void removePlayerBySessionId(String sessionId) {
-        players.entrySet().removeIf(entry -> entry.getValue().equals(sessionId));
+    /**
+     * @return the player id that was bound to this session, or null if none
+     */
+    public UUID removePlayerBySessionId(String sessionId) {
+        UUID found = null;
+        for (var entry : players.entrySet()) {
+            if (entry.getValue().equals(sessionId)) {
+                found = entry.getKey();
+                break;
+            }
+        }
+        if (found != null) {
+            players.remove(found);
+        }
+        return found;
     }
 
     public String getSessionId(UUID playerId) {

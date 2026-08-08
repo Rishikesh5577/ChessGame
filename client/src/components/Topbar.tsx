@@ -32,12 +32,12 @@ export function Topbar() {
                     setCreateOpen(true)
                   }}
                 >
-                  Create a game
+                  Find Match
                 </button>
               </div>
             )}
           </div>
-          <span className="nav-link muted-link" title="Coming soon">
+          <span className="nav-link muted-link puzzles-link" title="Coming soon">
             PUZZLES
           </span>
         </nav>
@@ -46,7 +46,7 @@ export function Topbar() {
           <span className={`conn-pill compact ${connected ? 'online' : 'offline'}`}>
             {connected ? '● Live' : '○ Offline'}
           </span>
-          <button type="button" className="btn ghost" disabled title="Auth coming soon">
+          <button type="button" className="btn ghost sign-in-btn" disabled title="Auth coming soon">
             SIGN IN
           </button>
         </div>

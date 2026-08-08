@@ -1,11 +1,8 @@
 package com.chessbet.service;
 
-import com.chessbet.core.Pair;
 import com.chessbet.dto.MakeMoveCommand;
 import com.chessbet.dto.MoveDto;
-import com.chessbet.engine.Chess;
 import com.chessbet.engine.Pgn;
-import com.chessbet.engine.option.MoveOptions;
 import com.chessbet.model.Game;
 import com.chessbet.model.GameStatus;
 import com.chessbet.model.Player;
@@ -13,7 +10,14 @@ import com.chessbet.model.PlayerColor;
 import com.chessbet.repository.GameRepository;
 import com.chessbet.repository.PlayerRepository;
 import org.springframework.stereotype.Service;
-import java.util.*;
+
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Random;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class MatchService {
@@ -21,9 +25,10 @@ public class MatchService {
     private final PlayerRepository playerRepository;
 
     /**
-     * A map of active games with their UUIDs as keys and a pair of the game and its chess engine as values
+     * Games currently being played, keyed by game id. Holds the move list that the chess engine
+     * needs to rebuild a position.
      */
-    private final Map<UUID, Pair<Game, Chess>> activeGames = new HashMap<>();
+    private final Map<UUID, ActiveGame> activeGames = new ConcurrentHashMap<>();
 
     public MatchService(GameRepository gameRepository, PlayerRepository playerRepository) {
         this.gameRepository = gameRepository;
@@ -31,7 +36,59 @@ public class MatchService {
     }
 
     public Game getActiveGame(UUID gameId) {
-        return activeGames.get(gameId).item1();
+        return requireActiveGame(gameId).getGame();
+    }
+
+    public ActiveGame requireActiveGame(UUID gameId) {
+        var activeGame = activeGames.get(gameId);
+
+        if (activeGame == null) {
+            throw new NoSuchElementException("Game with ID '%s' is not in progress".formatted(gameId));
+        }
+
+        return activeGame;
+    }
+
+    public ActiveGame registerActiveGame(Game game) {
+        var activeGame = new ActiveGame(game);
+        activeGames.put(game.getId(), activeGame);
+        return activeGame;
+    }
+
+    /**
+     * Starts an anonymous PvP match immediately (no OPEN lobby row). Colours are assigned at random.
+     */
+    public Game startAnonymousMatch(UUID playerA, UUID playerB) {
+        if (playerA.equals(playerB)) {
+            throw new IllegalArgumentException("Cannot match a player against themselves");
+        }
+
+        var playerAIsWhite = new Random().nextBoolean();
+
+        var game = new Game();
+        game.setAnonymousHostPlayerId(playerA);
+        game.setHostPlayerColor(playerAIsWhite ? PlayerColor.WHITE : PlayerColor.BLACK);
+
+        if (playerAIsWhite) {
+            game.setWhiteAnonymousPlayerId(playerA);
+            game.setBlackAnonymousPlayerId(playerB);
+        } else {
+            game.setBlackAnonymousPlayerId(playerA);
+            game.setWhiteAnonymousPlayerId(playerB);
+        }
+
+        game.setStatus(GameStatus.ONGOING);
+        game.setCurrentTurn(PlayerColor.WHITE);
+
+        var pgn = new Pgn();
+        pgn.setWhitePlayer("Anonymous");
+        pgn.setBlackPlayer("Anonymous");
+        pgn.setWhiteTurn();
+        game.setPgn(pgn.toString());
+
+        var saved = gameRepository.save(game);
+        registerActiveGame(saved);
+        return saved;
     }
 
     /**
@@ -108,8 +165,10 @@ public class MatchService {
         pgn.setWhiteTurn();
         game.setCurrentTurn(PlayerColor.WHITE);
         game.setPgn(pgn.toString());
-        activeGames.put(game.getId(), Pair.of(game, new Chess()));
-        return gameRepository.save(game);
+
+        var saved = gameRepository.save(game);
+        registerActiveGame(saved);
+        return saved;
     }
 
     /**
@@ -130,14 +189,11 @@ public class MatchService {
     }
 
     public Game leaveGame(UUID gameId, UUID playerId) {
-        final Game game;
-        var activeGame = activeGames.get(gameId).item1();
+        var activeGame = activeGames.get(gameId);
+        final Game game = activeGame != null
+                ? activeGame.getGame()
+                : gameRepository.findById(gameId).orElseThrow();
 
-        if (activeGame == null) {
-            activeGame = gameRepository.findById(gameId).orElseThrow();
-        }
-
-        game = activeGame;
         game.setStatus(GameStatus.CANCELLED);
 
         // Schedule a timer to complete the abandoned game after 1 minute
@@ -146,6 +202,7 @@ public class MatchService {
             @Override
             public void run() {
                 completeAbandonedGame(game, playerId);
+                timer.cancel();
             }
         }, 60000); // 60000 ms = 1 minute
 
@@ -159,10 +216,17 @@ public class MatchService {
      * @param abandonedPlayerId The ID of the player who abandoned the game
      */
     private void completeAbandonedGame(Game game, UUID abandonedPlayerId) {
-        var winnerPlayerId = game.getWhitePlayerId() == abandonedPlayerId ? game.getBlackPlayerId() : game.getWhitePlayerId();
+        var winnerPlayerId = abandonedPlayerId.equals(game.getWhitePlayerId())
+                ? game.getBlackPlayerId()
+                : game.getWhitePlayerId();
+
         var pgn = Pgn.fromString(game.getPgn());
 
-        if (winnerPlayerId.equals(game.getWhitePlayerId())){
+        if (winnerPlayerId == null) {
+            throw new NoSuchElementException("Winner could not be determined for game '%s'".formatted(game.getId()));
+        }
+
+        if (winnerPlayerId.equals(game.getWhitePlayerId())) {
             game.setWinnerPlayer(PlayerColor.WHITE);
             pgn.setWhiteWinResult();
         }
@@ -171,7 +235,7 @@ public class MatchService {
             pgn.setBlackWinResult();
         }
         else {
-            throw new NoSuchElementException("Winner with '%s' does not exist in the game".formatted(winnerPlayerId.toString()));
+            throw new NoSuchElementException("Winner with '%s' does not exist in the game".formatted(winnerPlayerId));
         }
 
         game.setStatus(GameStatus.COMPLETED);
@@ -180,31 +244,26 @@ public class MatchService {
     }
 
     public MoveDto makeMove(MakeMoveCommand command)  {
-        var activeGame = activeGames.get(command.gameId());
+        var activeGame = requireActiveGame(command.gameId());
+        var game = activeGame.getGame();
 
-        if (activeGame == null) {
-            throw new NoSuchElementException("Game with ID '%s' does not exist".formatted(command.gameId()));
-        }
-
-        // TODO: Fix engine move validation error
-//        var move = activeGame.item2().move(new MoveOptions(command.from(), command.to(), null, null, true));
-//
-//        if (move == null) {
-//            throw new IllegalArgumentException("Invalid move");
-//        }
-
-        var whitePlayerId = activeGame.item1().getWhitePlayerId();
-        var blackPlayerId = activeGame.item1().getBlackPlayerId();
+        activeGame.addMove(ActiveGame.toUci(command.from(), command.to(), command.promotion()));
+        game.setCurrentTurn(opposite(command.color()));
 
         return new MoveDto(
                 command.gameId(),
-                whitePlayerId,
-                blackPlayerId,
+                game.getWhitePlayerId(),
+                game.getBlackPlayerId(),
                 command.color(),
                 command.from(),
                 command.to(),
+                command.promotion(),
                 command.isCheckmate(),
                 command.isStalemate());
+    }
+
+    public static PlayerColor opposite(PlayerColor color) {
+        return color == PlayerColor.WHITE ? PlayerColor.BLACK : PlayerColor.WHITE;
     }
 
     /**
@@ -218,12 +277,12 @@ public class MatchService {
         var game = gameRepository.findById(gameId).orElseThrow();
         var pgn = Pgn.fromString(game.getPgn());
 
-        if (game.getWhitePlayerId().equals(playerId)) { // White player resigned
-            game.setWinnerPlayer(PlayerColor.WHITE); // Black player wins
+        if (playerId.equals(game.getWhitePlayerId())) { // White player resigned
+            game.setWinnerPlayer(PlayerColor.BLACK); // Black player wins
             pgn.setBlackWinResult();
         }
-        else if (game.getBlackPlayerId().equals(playerId)) { // Black player resigned
-            game.setWinnerPlayer(PlayerColor.BLACK); // White player wins
+        else if (playerId.equals(game.getBlackPlayerId())) { // Black player resigned
+            game.setWinnerPlayer(PlayerColor.WHITE); // White player wins
             pgn.setWhiteWinResult();
         }
         else {
@@ -232,6 +291,7 @@ public class MatchService {
 
         game.setStatus(GameStatus.RESIGNED);
         game.setPgn(pgn.toString());
+        activeGames.remove(gameId);
         return gameRepository.save(game);
     }
 
@@ -248,6 +308,7 @@ public class MatchService {
 
         game.setStatus(GameStatus.DRAW);
         game.setPgn(pgn.toString());
+        activeGames.remove(gameId);
         return gameRepository.save(game);
     }
 
@@ -260,6 +321,7 @@ public class MatchService {
     public Game abortGame(UUID gameId) {
         var game = gameRepository.findById(gameId).orElseThrow();
         game.setStatus(GameStatus.ABORTED);
+        activeGames.remove(gameId);
         return gameRepository.save(game);
     }
 }

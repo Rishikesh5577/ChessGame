@@ -37,6 +37,9 @@ public final class GameMapper {
                 game.getCurrentTurn(),
                 game.isRanked(),
                 game.isTimerEnabled(),
+                game.isVsBot(),
+                game.getBotColor(),
+                game.getBotDifficulty(),
                 game.getPgn(),
                 game.getCreatedDate()
         );

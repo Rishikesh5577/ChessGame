@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Chess, type Square } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
 import type { PieceDropHandlerArgs, SquareHandlerArgs } from 'react-chessboard'
@@ -8,23 +8,30 @@ export type LocalMove = {
   from: string
   to: string
   color: PlayerColor
+  promotion?: string
   isCheckmate: boolean
   isStalemate: boolean
   san?: string
+}
+
+export type PositionInfo = {
+  pgn: string
+  fen: string
+  inCheck: boolean
+  sans: string[]
+  isCheckmate: boolean
+  isStalemate: boolean
+  isDraw: boolean
+  sideToMove: PlayerColor
 }
 
 type Props = {
   orientation: 'white' | 'black'
   playerColor: PlayerColor
   currentTurn?: PlayerColor
-  externalMove?: { from: string; to: string; key?: number } | null
+  externalMove?: { from: string; to: string; promotion?: string | null; key?: number } | null
   onMove: (move: LocalMove) => void
-  onPositionChange?: (info: {
-    pgn: string
-    fen: string
-    inCheck: boolean
-    sans: string[]
-  }) => void
+  onPositionChange?: (info: PositionInfo) => void
 }
 
 type PendingPromotion = {
@@ -68,15 +75,27 @@ export function GameChessboard({
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null)
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null)
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const resize = () => {
-      const size = Math.min(window.innerWidth, window.innerHeight)
-      setBoardWidth(Math.max(size - 220, 280))
+    const el = wrapRef.current
+    if (!el) return
+
+    const update = () => {
+      const width = el.getBoundingClientRect().width
+      if (width > 0) {
+        setBoardWidth(Math.floor(Math.min(Math.max(width, 260), 720)))
+      }
     }
-    resize()
-    window.addEventListener('resize', resize)
-    return () => window.removeEventListener('resize', resize)
+
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    window.addEventListener('orientationchange', update)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('orientationchange', update)
+    }
   }, [])
 
   useEffect(() => {
@@ -85,6 +104,10 @@ export function GameChessboard({
       fen: game.fen(),
       inCheck: game.isCheck(),
       sans: game.history(),
+      isCheckmate: game.isCheckmate(),
+      isStalemate: game.isStalemate(),
+      isDraw: game.isDraw(),
+      sideToMove: game.turn() === 'w' ? PlayerColor.WHITE : PlayerColor.BLACK,
     })
   }, [game, onPositionChange])
 
@@ -94,7 +117,8 @@ export function GameChessboard({
     }
     setGame((prev) => {
       const next = new Chess(prev.fen())
-      const result = tryMove(next, externalMove.from, externalMove.to)
+      const promotion = (externalMove.promotion ?? 'q') as 'q' | 'r' | 'b' | 'n'
+      const result = tryMove(next, externalMove.from, externalMove.to, promotion)
       if (result) {
         setFen(next.fen())
         setSelectedSquare(null)
@@ -133,6 +157,7 @@ export function GameChessboard({
       from,
       to,
       color: playerColor,
+      promotion: result.promotion,
       isCheckmate: next.isCheckmate(),
       isStalemate: next.isStalemate(),
       san: result.san,
@@ -257,7 +282,7 @@ export function GameChessboard({
   const promoColor = playerColor === PlayerColor.WHITE ? 'w' : 'b'
 
   return (
-    <div className="board-wrap" style={{ width: boardWidth, maxWidth: '100%' }}>
+    <div ref={wrapRef} className="board-wrap">
       <Chessboard
         options={{
           id: 'chessbet-board',

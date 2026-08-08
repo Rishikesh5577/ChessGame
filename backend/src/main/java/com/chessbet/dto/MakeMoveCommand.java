@@ -9,6 +9,8 @@ public record MakeMoveCommand(
         PlayerColor color,
         String from,
         String to,
+        /* Promotion piece as a single lowercase letter (q, r, b, n), or null. */
+        String promotion,
         boolean isCheckmate,
         boolean isStalemate)
 {

@@ -1,5 +1,12 @@
 import { APP_CONFIG } from '../config'
-import type { CreateAnonymousGameCommand, GameDto } from '../types/game'
+import type {
+  BotMoveCommand,
+  BotMoveDto,
+  BotStatus,
+  CreateAnonymousGameCommand,
+  CreateBotGameCommand,
+  GameDto,
+} from '../types/game'
 
 async function request<T>(endpoint: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${APP_CONFIG.apiUrl}${endpoint}`, {
@@ -38,6 +45,22 @@ export const apiService = {
   cancelGame(gameId: string): Promise<GameDto> {
     return request<GameDto>(`/games/${gameId}/cancel`, {
       method: 'POST',
+    })
+  },
+  getBotStatus(): Promise<BotStatus> {
+    return request<BotStatus>('/bot/status')
+  },
+  createBotGame(command: CreateBotGameCommand): Promise<GameDto> {
+    return request<GameDto>('/games/vs-bot', {
+      method: 'POST',
+      body: JSON.stringify(command),
+    })
+  },
+  /** Submits the human move (if any) and returns the engine's reply. */
+  playBotMove(gameId: string, command: BotMoveCommand): Promise<BotMoveDto> {
+    return request<BotMoveDto>(`/games/${gameId}/bot-move`, {
+      method: 'POST',
+      body: JSON.stringify(command),
     })
   },
 }

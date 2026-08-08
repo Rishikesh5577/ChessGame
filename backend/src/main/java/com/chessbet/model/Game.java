@@ -68,6 +68,18 @@ public class Game extends AuditableEntity {
 
     private boolean isRanked = false;
 
+    /**
+     * True when the opponent is the chess engine rather than another person.
+     */
+    private boolean vsBot = false;
+
+    /**
+     * The side the engine plays. Only meaningful when {@link #vsBot} is true.
+     */
+    private PlayerColor botColor;
+
+    private BotDifficulty botDifficulty;
+
     private GameStatus status = GameStatus.OPEN;
 
     private String pgn = "";
@@ -145,11 +157,21 @@ public class Game extends AuditableEntity {
     }
 
     public String getWhitePlayerUsername() {
+        if (isBotSide(PlayerColor.WHITE)) {
+            return GameConst.BOT_NAME;
+        }
         return whitePlayer != null ? whitePlayer.getUsername() : "Anonymous";
     }
 
     public String getBlackPlayerUsername() {
+        if (isBotSide(PlayerColor.BLACK)) {
+            return GameConst.BOT_NAME;
+        }
         return blackPlayer != null ? blackPlayer.getUsername() : "Anonymous";
+    }
+
+    private boolean isBotSide(PlayerColor color) {
+        return vsBot && botColor == color;
     }
 
     public boolean isTimerEnabled() {
@@ -211,10 +233,44 @@ public class Game extends AuditableEntity {
     }
 
     public int getWhitePlayerElo() {
+        if (isBotSide(PlayerColor.WHITE)) {
+            return botElo();
+        }
         return whitePlayer != null ? whitePlayer.getElo() : GameConst.DEFAULT_ELO;
     }
 
     public int getBlackPlayerElo() {
+        if (isBotSide(PlayerColor.BLACK)) {
+            return botElo();
+        }
         return blackPlayer != null ? blackPlayer.getElo() : GameConst.DEFAULT_ELO;
+    }
+
+    private int botElo() {
+        return botDifficulty != null ? botDifficulty.getDisplayElo() : GameConst.DEFAULT_ELO;
+    }
+
+    public boolean isVsBot() {
+        return vsBot;
+    }
+
+    public void setVsBot(boolean vsBot) {
+        this.vsBot = vsBot;
+    }
+
+    public PlayerColor getBotColor() {
+        return botColor;
+    }
+
+    public void setBotColor(PlayerColor botColor) {
+        this.botColor = botColor;
+    }
+
+    public BotDifficulty getBotDifficulty() {
+        return botDifficulty;
+    }
+
+    public void setBotDifficulty(BotDifficulty botDifficulty) {
+        this.botDifficulty = botDifficulty;
     }
 }

@@ -21,11 +21,11 @@ public final class StringUtils {
         var lastIndex = 0;
 
         while (lastIndex != -1) {
-            lastIndex = str.indexOf(str, lastIndex);
+            lastIndex = str.indexOf(sub, lastIndex);
 
             if(lastIndex != -1){
                 count++;
-                lastIndex += str.length();
+                lastIndex += sub.length();
             }
         }
         return count;
