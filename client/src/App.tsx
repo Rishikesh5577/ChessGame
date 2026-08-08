@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { ToastProvider, useToast } from './components/Toast'
 import { Topbar } from './components/Topbar'
 import { GamePage } from './pages/GamePage'
@@ -10,7 +10,9 @@ import './App.css'
 
 function AppShell() {
   const navigate = useNavigate()
+  const location = useLocation()
   const toast = useToast()
+  const isGamePage = location.pathname.startsWith('/game')
 
   useEffect(() => {
     matchService.connect()
@@ -27,9 +29,9 @@ function AppShell() {
   }, [navigate, toast])
 
   return (
-    <div className="app">
+    <div className={`app${isGamePage ? ' game-theme' : ''}`}>
       <Topbar />
-      <main className="container">
+      <main className={`container${isGamePage ? ' container-game' : ''}`}>
         <Routes>
           <Route path="/" element={<Navigate to="/home" replace />} />
           <Route path="/home" element={<Lobby />} />

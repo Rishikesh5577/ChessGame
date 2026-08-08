@@ -25,6 +25,13 @@ type ExternalMove = {
   key: number
 }
 
+function avatarInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[1][0]).toUpperCase()
+}
+
 export function GamePage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -59,6 +66,25 @@ export function GamePage() {
   const isBotGame = Boolean(game?.vsBot)
   const orientation = playerColor === PlayerColor.BLACK ? 'black' : 'white'
   const isMyTurn = currentTurn === playerColor
+
+  const opponent = useMemo(() => {
+    if (!game) return { name: 'Opponent', elo: 1200, isBot: false }
+    const youAreWhite = playerColor === PlayerColor.WHITE
+    return {
+      name: youAreWhite ? (game.blackPlayerUsername ?? 'Opponent') : (game.whitePlayerUsername ?? 'Opponent'),
+      elo: youAreWhite ? (game.blackPlayerElo ?? 1200) : (game.whitePlayerElo ?? 1200),
+      isBot: Boolean(game.vsBot),
+    }
+  }, [game, playerColor])
+
+  const you = useMemo(() => {
+    if (!game) return { name: 'You', elo: 1200 }
+    const youAreWhite = playerColor === PlayerColor.WHITE
+    return {
+      name: youAreWhite ? (game.whitePlayerUsername ?? 'You') : (game.blackPlayerUsername ?? 'You'),
+      elo: youAreWhite ? (game.whitePlayerElo ?? 1200) : (game.blackPlayerElo ?? 1200),
+    }
+  }, [game, playerColor])
 
   useEffect(() => {
     if (stateGame) {
@@ -102,7 +128,6 @@ export function GamePage() {
     [toast],
   )
 
-  // The engine opens the game when it has the white pieces.
   useEffect(() => {
     if (!game?.vsBot || game.botColor !== PlayerColor.WHITE || openingRequested.current) {
       return
@@ -145,7 +170,6 @@ export function GamePage() {
       }
 
       if (info.isCheckmate) {
-        // The side that has to move is mated, so that side lost.
         resultReported.current = true
         setResult(info.sideToMove === playerColor ? 'lose' : 'win')
         setResultOpen(true)
@@ -185,28 +209,33 @@ export function GamePage() {
     })
   }
 
-  const isYou = (id?: string) =>
-    Boolean(id) && String(id).toLowerCase() === playerId.toLowerCase()
-
   const goHome = () => {
     setResultOpen(false)
     navigate('/home')
   }
 
-  const opponentLabel = isBotGame
-    ? `Stockfish · ${BOT_DIFFICULTY_LABELS[game.botDifficulty ?? 'IMPOSSIBLE']}`
-    : 'Human opponent'
+  const opponentSubtitle = isBotGame
+    ? BOT_DIFFICULTY_LABELS[game.botDifficulty ?? 'IMPOSSIBLE']
+    : `Rating ${opponent.elo}`
 
-  const bannerText = () => {
-    if (resultOpen) return 'Game over'
-    if (botFailed) return 'Engine error — return to the lobby'
-    if (botThinking) return 'Stockfish is thinking…'
-    if (isMyTurn) return inCheck ? 'Your turn — you are in check!' : 'Your turn'
-    return isBotGame ? 'Stockfish is thinking…' : 'Waiting for opponent…'
+  const statusText = () => {
+    if (resultOpen) {
+      if (result === 'win') return 'You won!'
+      if (result === 'lose') return 'You lost.'
+      return 'Draw.'
+    }
+    if (botFailed) return 'Engine error — return to the lobby.'
+    if (botThinking) return `${opponent.name} is thinking…`
+    if (isMyTurn) {
+      return inCheck
+        ? 'Your turn — you are in check! Click any valid piece to move.'
+        : 'Your turn. Click any valid piece to move.'
+    }
+    return isBotGame ? `${opponent.name} is thinking…` : 'Waiting for opponent…'
   }
 
   return (
-    <div className="game-layout">
+    <div className="game-layout classic-table">
       <GameResultDialog
         open={resultOpen}
         result={result}
@@ -215,41 +244,49 @@ export function GamePage() {
       />
 
       <div className="board-col">
-        <div className={`turn-banner ${isMyTurn && !botThinking ? 'your-turn' : 'waiting-turn'}`}>
-          {bannerText()}
+        <div className="felt-mat">
+          <div className="seat opponent-seat">
+            <div className={`seat-avatar${opponent.isBot ? ' bot' : ''}`} aria-hidden>
+              {opponent.isBot ? '♛' : avatarInitials(opponent.name)}
+            </div>
+            <div className="seat-meta">
+              <strong className="seat-name">{opponent.name}</strong>
+              <span className="seat-sub">{opponentSubtitle}</span>
+            </div>
+          </div>
+
+          <GameChessboard
+            orientation={orientation}
+            playerColor={playerColor}
+            currentTurn={currentTurn ?? PlayerColor.WHITE}
+            externalMove={externalMove}
+            onMove={sendMove}
+            onPositionChange={onPositionChange}
+          />
+
+          <p className="table-status">{statusText()}</p>
+
+          <div className="seat you-seat">
+            <div className="seat-avatar you" aria-hidden>
+              {avatarInitials(you.name === 'Anonymous' ? 'You' : you.name)}
+            </div>
+            <div className="seat-meta">
+              <strong className="seat-name">
+                {you.name === 'Anonymous' ? 'You' : you.name}
+              </strong>
+              <span className="seat-sub">Rating {you.elo}</span>
+            </div>
+          </div>
         </div>
-        <GameChessboard
-          orientation={orientation}
-          playerColor={playerColor}
-          currentTurn={currentTurn ?? PlayerColor.WHITE}
-          externalMove={externalMove}
-          onMove={sendMove}
-          onPositionChange={onPositionChange}
-        />
       </div>
 
       <aside className="side-col">
         <div className="card">
           <h3>Game Info</h3>
-          <div className="player-row">
-            <span className="dot white" />
-            <div>
-              <strong>{game.whitePlayerUsername}</strong> ({game.whitePlayerElo})
-              {isYou(game.whitePlayerId) ? ' · You' : ''}
-            </div>
-          </div>
-          <div className="player-row">
-            <span className="dot black" />
-            <div>
-              <strong>{game.blackPlayerUsername}</strong> ({game.blackPlayerElo})
-              {isYou(game.blackPlayerId) ? ' · You' : ''}
-            </div>
-          </div>
           <p className="meta">
             Turn: <strong>{currentTurn ?? '—'}</strong>
             {inCheck && !resultOpen ? ' · Check' : ''}
           </p>
-          <p className="meta">Mode: {opponentLabel}</p>
           <p className="meta">Status: {game.status}</p>
           <div className="actions">
             <button type="button" className="btn" disabled title="Coming soon">

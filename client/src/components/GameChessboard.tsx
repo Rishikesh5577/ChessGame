@@ -39,6 +39,18 @@ type PendingPromotion = {
   to: string
 }
 
+/** Flat wood colours (no per-square gradient). */
+const LIGHT_WOOD: CSSProperties = {
+  backgroundColor: '#e8c992',
+}
+
+const DARK_WOOD: CSSProperties = {
+  backgroundColor: '#b07038',
+}
+
+const FILES_WHITE = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+const RANKS_WHITE = ['8', '7', '6', '5', '4', '3', '2', '1']
+
 function tryMove(game: Chess, from: string, to: string, promotion: 'q' | 'r' | 'b' | 'n' = 'q') {
   if (!from || !to || from === to) {
     return null
@@ -71,30 +83,73 @@ export function GameChessboard({
 }: Props) {
   const [game, setGame] = useState(() => new Chess())
   const [fen, setFen] = useState(() => game.fen())
-  const [boardWidth, setBoardWidth] = useState(480)
+  const [boardWidth, setBoardWidth] = useState(() => {
+    if (typeof window === 'undefined') return 320
+    const vw = window.innerWidth
+    return Math.floor(Math.min(480, Math.max(180, vw - 56)))
+  })
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null)
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null)
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
+
+  const files = orientation === 'white' ? FILES_WHITE : [...FILES_WHITE].reverse()
+  const ranks = orientation === 'white' ? RANKS_WHITE : [...RANKS_WHITE].reverse()
 
   useEffect(() => {
-    const el = wrapRef.current
-    if (!el) return
+    const wrap = wrapRef.current
+    if (!wrap) return
 
     const update = () => {
-      const width = el.getBoundingClientRect().width
-      if (width > 0) {
-        setBoardWidth(Math.floor(Math.min(Math.max(width, 260), 720)))
-      }
+      const vw = window.visualViewport?.width ?? window.innerWidth
+      const vh = window.visualViewport?.height ?? window.innerHeight
+
+      const felt = wrap.closest('.felt-mat') as HTMLElement | null
+      const col = wrap.closest('.board-col') as HTMLElement | null
+      const mid = wrap.closest('.frame-mid') as HTMLElement | null
+
+      const leftCoord = mid?.querySelector('.coord-col.left') as HTMLElement | null
+      const rightCoord = mid?.querySelector('.coord-col.right') as HTMLElement | null
+      const gutterX =
+        (leftCoord?.offsetWidth || 18) + (rightCoord?.offsetWidth || 18)
+
+      /* Measure outer containers — never the board itself (avoids grow loop). */
+      const outerW = Math.min(
+        felt?.clientWidth ?? Number.POSITIVE_INFINITY,
+        col?.clientWidth ?? Number.POSITIVE_INFINITY,
+        vw,
+      )
+
+      const horizontalPad = 8
+      const availableW = Math.max(140, outerW - gutterX - horizontalPad)
+
+      const stacked = vw <= 860
+      const chromeY = stacked ? 200 : 176
+      const availableH = Math.max(140, vh - chromeY)
+
+      const size = Math.floor(Math.min(availableW, availableH, 640))
+      setBoardWidth((prev) => (prev === size ? prev : size))
     }
 
     update()
+    requestAnimationFrame(update)
+
     const ro = new ResizeObserver(update)
-    ro.observe(el)
+    const felt = wrap.closest('.felt-mat')
+    const col = wrap.closest('.board-col')
+    if (felt) ro.observe(felt)
+    if (col) ro.observe(col)
+
+    window.addEventListener('resize', update)
     window.addEventListener('orientationchange', update)
+    window.visualViewport?.addEventListener('resize', update)
+
     return () => {
       ro.disconnect()
+      window.removeEventListener('resize', update)
       window.removeEventListener('orientationchange', update)
+      window.visualViewport?.removeEventListener('resize', update)
     }
   }, [])
 
@@ -242,8 +297,8 @@ export function GameChessboard({
     const styles: Record<string, CSSProperties> = {}
 
     if (lastMove) {
-      styles[lastMove.from] = { background: 'rgba(250, 204, 21, 0.35)' }
-      styles[lastMove.to] = { background: 'rgba(250, 204, 21, 0.55)' }
+      styles[lastMove.from] = { backgroundColor: 'rgba(186, 202, 68, 0.55)' }
+      styles[lastMove.to] = { backgroundColor: 'rgba(186, 202, 68, 0.72)' }
     }
 
     if (game.isCheck()) {
@@ -261,18 +316,18 @@ export function GameChessboard({
     }
 
     if (selectedSquare) {
-      styles[selectedSquare] = { background: 'rgba(250, 204, 21, 0.65)' }
+      styles[selectedSquare] = { backgroundColor: 'rgba(186, 202, 68, 0.85)' }
     }
 
     for (const target of legalTargets) {
       styles[target.square] = target.isCapture
         ? {
             background:
-              'radial-gradient(circle, transparent 0%, transparent 72%, rgba(19, 38, 47, 0.55) 72%)',
+              'radial-gradient(circle, transparent 0%, transparent 68%, rgba(20, 40, 20, 0.45) 68%)',
           }
         : {
             background:
-              'radial-gradient(circle, rgba(19, 38, 47, 0.45) 18%, transparent 19%)',
+              'radial-gradient(circle, rgba(20, 40, 20, 0.4) 16%, transparent 17%)',
           }
     }
 
@@ -282,66 +337,95 @@ export function GameChessboard({
   const promoColor = playerColor === PlayerColor.WHITE ? 'w' : 'b'
 
   return (
-    <div ref={wrapRef} className="board-wrap">
-      <Chessboard
-        options={{
-          id: 'chessbet-board',
-          position: fen,
-          boardOrientation: orientation,
-          showNotation: true,
-          animationDurationInMs: 200,
-          boardStyle: {
-            width: boardWidth,
-            borderRadius: '4px',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-          },
-          darkSquareStyle: { backgroundColor: '#b96331' },
-          lightSquareStyle: { backgroundColor: '#f0c697' },
-          squareStyles,
-          allowDragging: canMove && !pendingPromotion,
-          canDragPiece: ({ piece }) => {
-            const isWhitePiece = piece.pieceType.startsWith('w')
-            return playerColor === PlayerColor.WHITE ? isWhitePiece : !isWhitePiece
-          },
-          onPieceDrop,
-          onPieceDrag,
-          onSquareClick,
-        }}
-      />
+    <div ref={frameRef} className="wood-frame" aria-label="Chess board">
+      <div className="coord-row top" aria-hidden>
+        {files.map((f) => (
+          <span key={`t-${f}`}>{f.toUpperCase()}</span>
+        ))}
+      </div>
 
-      {pendingPromotion && (
-        <div className="promotion-bar" role="dialog" aria-label="Choose promotion piece">
-          <span>Promote to</span>
-          {(
-            [
-              ['q', 'Queen'],
-              ['r', 'Rook'],
-              ['b', 'Bishop'],
-              ['n', 'Knight'],
-            ] as const
-          ).map(([code, label]) => (
-            <button
-              key={code}
-              type="button"
-              className="promo-btn"
-              title={label}
-              onClick={() => commitMove(pendingPromotion.from, pendingPromotion.to, code)}
-            >
-              {code === 'q' ? (promoColor === 'w' ? '♕' : '♛') : null}
-              {code === 'r' ? (promoColor === 'w' ? '♖' : '♜') : null}
-              {code === 'b' ? (promoColor === 'w' ? '♗' : '♝') : null}
-              {code === 'n' ? (promoColor === 'w' ? '♘' : '♞') : null}
-            </button>
+      <div className="frame-mid">
+        <div className="coord-col left" aria-hidden>
+          {ranks.map((r) => (
+            <span key={`l-${r}`}>{r}</span>
           ))}
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => setPendingPromotion(null)}
-          >
-            Cancel
-          </button>
         </div>
-      )}
+
+        <div ref={wrapRef} className="board-wrap">
+          <Chessboard
+            options={{
+              id: 'chessbet-board',
+              position: fen,
+              boardOrientation: orientation,
+              showNotation: false,
+              animationDurationInMs: 180,
+              boardStyle: {
+                width: boardWidth,
+                maxWidth: '100%',
+                borderRadius: 0,
+                boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.35)',
+              },
+              darkSquareStyle: DARK_WOOD,
+              lightSquareStyle: LIGHT_WOOD,
+              squareStyles,
+              allowDragging: canMove && !pendingPromotion,
+              canDragPiece: ({ piece }) => {
+                const isWhitePiece = piece.pieceType.startsWith('w')
+                return playerColor === PlayerColor.WHITE ? isWhitePiece : !isWhitePiece
+              },
+              onPieceDrop,
+              onPieceDrag,
+              onSquareClick,
+            }}
+          />
+
+          {pendingPromotion && (
+            <div className="promotion-bar" role="dialog" aria-label="Choose promotion piece">
+              <span>Promote to</span>
+              {(
+                [
+                  ['q', 'Queen'],
+                  ['r', 'Rook'],
+                  ['b', 'Bishop'],
+                  ['n', 'Knight'],
+                ] as const
+              ).map(([code, label]) => (
+                <button
+                  key={code}
+                  type="button"
+                  className="promo-btn"
+                  title={label}
+                  onClick={() => commitMove(pendingPromotion.from, pendingPromotion.to, code)}
+                >
+                  {code === 'q' ? (promoColor === 'w' ? '♕' : '♛') : null}
+                  {code === 'r' ? (promoColor === 'w' ? '♖' : '♜') : null}
+                  {code === 'b' ? (promoColor === 'w' ? '♗' : '♝') : null}
+                  {code === 'n' ? (promoColor === 'w' ? '♘' : '♞') : null}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setPendingPromotion(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="coord-col right" aria-hidden>
+          {ranks.map((r) => (
+            <span key={`r-${r}`}>{r}</span>
+          ))}
+        </div>
+      </div>
+
+      <div className="coord-row bottom" aria-hidden>
+        {files.map((f) => (
+          <span key={`b-${f}`}>{f.toUpperCase()}</span>
+        ))}
+      </div>
     </div>
   )
 }
